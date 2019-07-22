@@ -16,8 +16,8 @@ public class AddUserTest6 {
     private UserService userService;
 
     public static void main(String[] args) {
-        AddUserTest6 test5 = (AddUserTest6) BeanFactory.getBean4("addUserTest6");
-        test5.add();
+        AddUserTest6 test6 = (AddUserTest6) BeanFactory.getBean4("addUserTest6");
+        test6.add();
     }
 
     public void add(){
