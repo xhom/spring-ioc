@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans>
+
+    <bean id="userService" class="com.visy.spring.service.impl.UserServiceImpl">
+        <!--为属性userDao2注入名称为“userDAO2”的bean-->
+        <property name="userDao2" ref="userDAO2"> </property>
+    </bean>
+
+    <bean name="userDAO1" class="com.visy.spring.dao.impl.UserDAOImpl1"></bean>
+
+    <bean name="userDAO2" class="com.visy.spring.dao.impl.UserDAOImpl2"></bean>
+
+</beans>
