@@ -16,23 +16,17 @@ public class AddUserTest5 {
     private UserService userService;
 
     public static void main(String[] args) {
-
         AddUserTest5 test5 = (AddUserTest5)BeanFactory.getBean3("addUserTest5");
         test5.add();
     }
 
-
     public void add(){
         //创建要保存的用户
         User user = new User(4,"陈六","004");
-
         userService.add3(user);//添加用户
     }
 
-    public UserService getUserService() {
-        return userService;
-    }
-
+    //setter 注入使用
     public void setUserService(UserService userService) {
         this.userService = userService;
     }
