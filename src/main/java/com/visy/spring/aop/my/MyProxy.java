@@ -1,7 +1,6 @@
 package com.visy.spring.aop.my;
 
-import com.visy.spring.aop.Developer;
-import com.visy.spring.aop.People;
+import com.visy.spring.util.StringUtil;
 
 import javax.tools.JavaCompiler;
 import javax.tools.JavaFileObject;
@@ -11,96 +10,231 @@ import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.lang.reflect.Constructor;
-import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.net.URL;
+import java.net.URLClassLoader;
 
+/**
+ *  1. 第一次执行代理类加载出错：ClassNotFoundException
+ *  2.interfaces间有继承关系的情况没处理
+ */
 public class MyProxy {
-    private static String rt = "\r\n";
+    private static final String RT = "\r\n";
+    private static final String SP = File.separator;
+    private static final String PROXY_NAME = "$Proxy0";
 
-    private static String get$Proxy0(Class<?> interfaceClass){
+    /**
+     * 生成代理类源码
+     * @param interfaces 接口Class
+     * @return
+     */
+    private static String getProxySrc(Class<?>[] interfaces){
+        if(interfaces==null ||interfaces.length==0){
+            System.out.println("没有可代理的interfaces...");
+            return null;
+        }
+        System.out.println("开始生成代理类...");
+        String pkg = getPkg();
+        String importItfs = "";
+        String implementsItfs = "";
+        String itfClassesDef = "";
+        int index = 0;
+        for(Class<?> itfClass : interfaces){
+            String itfPath = itfClass.getName();
+            String itfName = itfClass.getSimpleName();
+            importItfs += "import "+itfPath+";"+RT;
+            implementsItfs += itfName+",";
+            itfClassesDef += "   private Class<?> itfClass"+index+" = "+itfName+".class;"+RT;
+            index ++;
+        }
+        implementsItfs = StringUtil.deleteLastChar(implementsItfs);
+
         String proxyClass =
-                "package com.visy.spring.aop.my;"+rt+
-                "import java.lang.reflect.Method;"+rt+
-                "public class $Proxy0 implements "+interfaceClass.getName()+"{"+rt+
-                "   private MyInvocationHandler handler;"+rt+
-                "   public $Proxy0(MyInvocationHandler handler){"+rt+
-                "       this.handler = handler;"+rt+
-                "   }"+rt+
-                getMethods(interfaceClass)+
-                "}"+rt;
+                "package "+pkg+";"+RT+RT+
+                "import java.lang.reflect.Method;"+RT+RT+
+                 importItfs+RT+
+                "public class "+PROXY_NAME+" implements "+implementsItfs+"{"+RT+
+                "   private MyInvocationHandler handler;"+RT+
+                    itfClassesDef+RT+
+                "   public "+PROXY_NAME+"(MyInvocationHandler handler){"+RT+
+                "       this.handler = handler;"+RT+
+                "   }"+RT+RT+
+                    getMethodsSrc(interfaces)+
+                "}"+RT;
+        System.out.println("代理类生成完毕");
         return proxyClass;
     }
 
-    public static String getMethods(Class<?> interfaceClass){
-        Method[] methods = interfaceClass.getMethods();
-        String methodsStr = "";
-        for(Method m: methods){
-            String mName = m.getName();
-            methodsStr +=
-                    "   public void "+mName+"() throws Throwable {"+rt+
-                    "       Method md = "+interfaceClass.getName()+".class.getMethod(\""+mName+"\");"+rt+
-                    "       this.handler.invoke(this,md,null);"+rt+
-                    "   }"+rt;
+    private static String getMethodsSrc(Class<?>[] interfaces){
+        String allMethodsStr = "";
+        int itf_index = 0;
+        for(Class<?> itfClass: interfaces){
+            Method[] methods = itfClass.getMethods();
+            String methodsStr = "";
+            for(Method method: methods){
+                String methodName = method.getName();
+                String returnType = method.getReturnType().getName();
+
+                String methodParameterTypes = "new Class<?>[]{";
+                String parameterList = "";
+                String invokeParameterList = "";
+                boolean hasParameters = false;
+                int index = 0;
+                for(Class<?> parameterType: method.getParameterTypes()){
+                    String type = parameterType.getName();
+                    methodParameterTypes += type+".class,";
+                    parameterList += type+" arg"+index+",";
+                    invokeParameterList += "arg"+index+",";
+                    hasParameters = true;
+                }
+                if(hasParameters){
+                    methodParameterTypes = StringUtil.deleteLastChar(methodParameterTypes);
+                    parameterList = StringUtil.deleteLastChar(parameterList);
+                    invokeParameterList = StringUtil.deleteLastChar(invokeParameterList);
+                }
+                methodParameterTypes += "}";
+
+                methodsStr +=
+                        "   @Override"+RT+
+                                "   public "+returnType+" "+methodName+"("+parameterList+"){"+RT+
+                                "       try{"+RT+
+                                "           Method method = itfClass"+itf_index+".getMethod(\""+methodName+"\","+methodParameterTypes+");"+RT+
+                                returnStr(returnType,invokeParameterList)+RT+
+                                "       }catch(Throwable e){"+RT+
+                                "           System.out.println(\"代理方法获取失败\");"+RT+
+                                "       }"+RT+
+                                returnStr2(returnType)+
+                                "   }"+RT;
+            }
+            allMethodsStr += methodsStr;
+            itf_index ++;
         }
 
-        return methodsStr;
+        return allMethodsStr;
     }
 
-    public static void write$Proxy0(String proxyClass, String path){
-        File f = new File(path);
+    public static String returnStr(String returnType, String invokeParameterList){
+        String args = "".equals(invokeParameterList) ? "null" : "new Object[]{"+invokeParameterList+"}";
+        if("void".equals(returnType)){
+            return "           this.handler.invoke(this, method, "+args+");";
+        }else{
+            return "           return ("+returnType+")this.handler.invoke(this, method, "+args+");";
+        }
+    }
+    public static String returnStr2(String returnType){
+        if(!"void".equals(returnType)){
+            String val = "";
+            if("byte".equals(returnType) || "short".equals(returnType) || "int".equals(returnType)){
+                val = "0";
+            }else if("long".equals(returnType)){
+                val = "0L";
+            }else if("float".equals(returnType)){
+                val = "0.0f";
+            }else if("double".equals(returnType)){
+                val = "0.0d";
+            }else if("char".equals(returnType)){
+                val = "'\\u0000'";
+            }else if("boolean".equals(returnType)){
+                val = "false";
+            }else{
+                val = "null";
+            }
+            return "       return "+val+";"+RT;
+        }
+        return "";
+    }
+
+    public static String writeProxy(String proxyClass, String fileName){
+        System.out.println("开始写入代理类文件...");
+        String basePath = ClassLoader.getSystemResource("").getPath();
+        String suffixPath = MyProxy.class.getName().replace(".", SP);
+        suffixPath = suffixPath.replace(SP+"MyProxy",SP);
+        String filePath = basePath.replace("/",SP) + suffixPath;
+        filePath = filePath.replace(SP+"target"+SP+"classes"+SP,SP+"src"+SP+"main"+SP+"java"+SP);
+        filePath = filePath+fileName+".java";
+
+        File f = new File(filePath);
         try {
             FileWriter fw = new FileWriter(f);
             fw.write(proxyClass);
             fw.flush();
             fw.close();
+            System.out.println("代理类文件写入成功："+filePath);
         } catch (IOException e) {
-            e.printStackTrace();
+            System.out.println("代理类文件写入失败"+filePath);
+            return null;
         }
+        return f.getPath();
     }
 
 
-    private static void compileJavaFile(String fileName) {
-        //获取系统当前java编译器
-        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
-        //获得文件管理器
-        StandardJavaFileManager manager = compiler.getStandardFileManager(null,null, null);
-        Iterable<? extends JavaFileObject> javaFiels = manager.getJavaFileObjects(fileName);
-        //编译任务
-        JavaCompiler.CompilationTask task = compiler.getTask(null,manager,null,null,null,javaFiels);
-        //开始编译，执行完毕后当前目录生成.class文件
-        task.call();
+    private static void compileJavaFile(String filePath) {
+        System.out.println("开始编译代理类...");
         try{
+            //获取系统当前java编译器
+            JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+            //获得文件管理器
+            StandardJavaFileManager manager = compiler.getStandardFileManager(null,null, null);
+            Iterable<? extends JavaFileObject> javaFiles = manager.getJavaFileObjects(filePath);
+            //编译任务
+            JavaCompiler.CompilationTask task = compiler.getTask(null,manager,null,null,null,javaFiles);
+            task.call();//开始编译，执行完毕后当前目录生成.class文件
             manager.close();//关闭文件管理器
+            System.out.println("代理类编译完毕："+filePath.replace(".java",".class"));
         }catch (IOException e){
-            e.printStackTrace();
+            System.out.println("代理类编译失败："+filePath.replace(".java",".class"));
         }
     }
 
-    private static Object loadClassToJVM(MyInvocationHandler handler){
+    private static Class<?> loadClassToJVM(String filePath){
+        System.out.println("开始加载代理类class到JVM...");
         try{
-            //使用自定义类加载器
-            MyClassLoader myLoader = new MyClassLoader("D:\\developer\\idea\\workspace\\spring-demo\\src\\main\\java\\com\\visy\\spring\\aop\\my");
-            Class<?> $proxy0 = myLoader.findClass("$Proxy0");
-            Constructor<?> constructor = $proxy0.getConstructor(MyInvocationHandler.class);
-            return constructor.newInstance(handler);
-        }catch (ClassNotFoundException | NoSuchMethodException | IllegalAccessException | InstantiationException | InvocationTargetException e){
+            //class url指定
+            String proxySpec = filePath.substring(0,filePath.indexOf(SP+"main"));//取到src目录
+            File file = new File(proxySpec);
+            URL url = file.toURI().toURL();
+            URL[] urls = new URL[]{url};
+            //去指定路径寻找class文件
+            URLClassLoader urlClassLoader = new URLClassLoader(urls);
+            Class<?> proxyClass = urlClassLoader.loadClass(getPkg()+"."+PROXY_NAME);//完整类名（含包信息）
+            System.out.println("代理类class已加载到JVM");
+            return proxyClass;
+        }catch (Exception e){
+            System.out.println("代理类class加载到JVM失败");
             e.printStackTrace();
         }
         return null;
     }
 
-    public static Object newProxyInstance(ClassLoader loader,Class<?> interfaces,MyInvocationHandler handler) {
-        //FIXME 该路径需要自己定义,我们定义为proxy/temp的绝对路径，这样代理类就会在该文件夹下生成
-        String path = "D:\\developer\\idea\\workspace\\spring-demo\\src\\main\\java\\com\\visy\\spring\\aop\\my\\$Proxy0.java";
-
-        //1、用已知的接口，遍历里面的方法，以字符串的形式拼凑出内存里的代理类（动态代理类与被代理类实现同一接口在此体现）
-        String proxyClass = get$Proxy0(interfaces);
-        //2、将代理类的写到本地java文件
-        write$Proxy0(proxyClass, path);
-        //3、编译java文件
-        compileJavaFile(path);
-        //4、将对应编译出来的字节码加载到JVM内存
-        return loadClassToJVM(handler);
+    public static String getPkg(){
+        return MyProxy.class.getPackage().getName();
     }
 
+    public static Object newProxyInstance(Class<?>[] interfaces,MyInvocationHandler handler){
+        //1.生成代理类源码
+        String proxyClass = getProxySrc(interfaces);
+        //2.将代理类源码写入.java文件
+        String filePath = writeProxy(proxyClass,PROXY_NAME);
+        //3.编译写入的java文件
+        compileJavaFile(filePath);
+
+        //编译后马上读取会找不到class文件（ClassNotFoundException）
+        String classFilePath = filePath.replace(".java",".class");
+        boolean fileExists = false;
+        while(!fileExists){
+            System.out.println("等待class文件写入...");
+            File file = new File(classFilePath);
+            fileExists = file.exists();
+        }
+
+        //4.将编译后的class文件加载到JVM
+        Class<?> clazz =  loadClassToJVM(filePath);
+        try{
+            Constructor<?> constructor = clazz.getConstructor(MyInvocationHandler.class);
+            return constructor.newInstance(handler);
+        }catch (Exception e){
+            System.out.println("代理类实例化失败");
+        }
+        return null;
+    }
 }

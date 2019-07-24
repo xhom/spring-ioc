@@ -1,4 +1,8 @@
-package com.visy.spring.aop;
+package com.visy.spring.aop.jdk;
+
+import com.visy.spring.aop.usecase.Developer;
+import com.visy.spring.aop.usecase.JavaDeveloper;
+import com.visy.spring.aop.usecase.People;
 
 public class AOPTest2 {
     public static void main(String[] args) {

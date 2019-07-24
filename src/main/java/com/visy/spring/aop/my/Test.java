@@ -1,12 +1,22 @@
 package com.visy.spring.aop.my;
 
+import com.visy.spring.aop.usecase.Developer;
+import com.visy.spring.aop.usecase.JavaDeveloper;
+import com.visy.spring.aop.usecase.People;
+
 public class Test {
-    public static void main(String[] args) throws Throwable{
-        UserServiceImpl userService = new UserServiceImpl();
-        MyInvocationHandlerImpl handler = new MyInvocationHandlerImpl(userService);
+    public static void main(String[] args){
+        JavaDeveloper developer = new JavaDeveloper("旺旺");
 
-        UserService userServiceProxy = (UserService) MyProxy.newProxyInstance(Test.class.getClassLoader(),UserService.class,handler);
+        Object developerProxy = MyProxy.newProxyInstance(developer.getClass().getInterfaces(), new MyProxyHandler(developer));
 
-        userServiceProxy.execute();
+        People proxy1 = (People)developerProxy;
+
+        proxy1.eat();
+        int he = proxy1.getHeight("asas");
+        System.out.println(he);
+        Developer proxy2 = (Developer)developerProxy;
+        proxy2.coding();
+        proxy2.debugging();
     }
 }
