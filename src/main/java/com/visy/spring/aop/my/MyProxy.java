@@ -75,31 +75,30 @@ public class MyProxy {
                 String methodName = method.getName();
                 String returnType = method.getReturnType().getName();
 
-                String methodParameterTypes = "new Class<?>[]{";
-                String parameterList = "";
-                String invokeParameterList = "";
+                String parameterTypes = "";
+                String parameters = "";
+                String argSeq = "";
                 boolean hasParameters = false;
                 int index = 0;
                 for(Class<?> parameterType: method.getParameterTypes()){
                     String type = parameterType.getName();
-                    methodParameterTypes += type+".class,";
-                    parameterList += type+" arg"+index+",";
-                    invokeParameterList += "arg"+index+",";
+                    parameterTypes += ","+type+".class";
+                    parameters += type+" arg"+index+",";
+                    argSeq += "arg"+index+",";
                     hasParameters = true;
+                    index ++;
                 }
                 if(hasParameters){
-                    methodParameterTypes = StringUtil.deleteLastChar(methodParameterTypes);
-                    parameterList = StringUtil.deleteLastChar(parameterList);
-                    invokeParameterList = StringUtil.deleteLastChar(invokeParameterList);
+                    parameters = StringUtil.deleteLastChar(parameters);
+                    argSeq = StringUtil.deleteLastChar(argSeq);
                 }
-                methodParameterTypes += "}";
 
                 methodsStr +=
                         "   @Override"+RT+
-                                "   public "+returnType+" "+methodName+"("+parameterList+"){"+RT+
+                                "   public "+returnType+" "+methodName+"("+parameters+"){"+RT+
                                 "       try{"+RT+
-                                "           Method method = itfClass"+itf_index+".getMethod(\""+methodName+"\","+methodParameterTypes+");"+RT+
-                                returnStr(returnType,invokeParameterList)+RT+
+                                "           Method method = this.itfClass"+itf_index+".getMethod(\""+methodName+"\""+parameterTypes+");"+RT+
+                                returnStr(returnType,argSeq)+RT+
                                 "       }catch(Throwable e){"+RT+
                                 "           System.out.println(\"代理方法获取失败\");"+RT+
                                 "       }"+RT+
@@ -113,8 +112,8 @@ public class MyProxy {
         return allMethodsStr;
     }
 
-    public static String returnStr(String returnType, String invokeParameterList){
-        String args = "".equals(invokeParameterList) ? "null" : "new Object[]{"+invokeParameterList+"}";
+    public static String returnStr(String returnType, String argSeq){
+        String args = "".equals(argSeq) ? "null" : "new Object[]{"+argSeq+"}";
         if("void".equals(returnType)){
             return "           this.handler.invoke(this, method, "+args+");";
         }else{
@@ -217,22 +216,13 @@ public class MyProxy {
         String filePath = writeProxy(proxyClass,PROXY_NAME);
         //3.编译写入的java文件
         compileJavaFile(filePath);
-
-        //编译后马上读取会找不到class文件（ClassNotFoundException）
-        String classFilePath = filePath.replace(".java",".class");
-        boolean fileExists = false;
-        while(!fileExists){
-            System.out.println("等待class文件写入...");
-            File file = new File(classFilePath);
-            fileExists = file.exists();
-        }
-
         //4.将编译后的class文件加载到JVM
         Class<?> clazz =  loadClassToJVM(filePath);
         try{
             Constructor<?> constructor = clazz.getConstructor(MyInvocationHandler.class);
             return constructor.newInstance(handler);
         }catch (Exception e){
+            e.printStackTrace();
             System.out.println("代理类实例化失败");
         }
         return null;

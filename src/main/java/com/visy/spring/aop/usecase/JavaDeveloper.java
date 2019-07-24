@@ -20,9 +20,9 @@ public class JavaDeveloper implements Developer,People{
     }
 
     @Override
-    public int getHeight(String ss) {
+    public int getHeight(String ss,int s) {
         System.out.println("身高。。。"+ss);
-        return 174;
+        return s;
     }
 
     @Override
